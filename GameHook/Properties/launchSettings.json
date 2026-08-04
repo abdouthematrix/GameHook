@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "GameHook": {
+      "commandName": "Project",
+      "debugEngines": "managed,native"
+    }
+  }
+}

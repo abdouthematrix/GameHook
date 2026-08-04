@@ -1,0 +1,25 @@
+{
+  "SlotMachine": {
+    "ExpRewardTime": 100,
+    "PrizeRewardMultiply": 300
+  },
+  "Items": {
+    "LockAlwaysSucceeds": false
+  },
+  "Upgrade": {
+    "MeteorFirstSocket": 1200,
+    "MeteorSecondSocket": 2400,
+    "QualitySocket": 300
+  },
+  "Player": {
+    "ForceMerchant": false
+  },
+  "Security": {
+    "BlowfishKey": "C238xs65pjy7HU9Q"
+  },
+  "Identity": {
+    "EnableCheck": false,
+    "Hwid": "",
+    "Ip": ""
+  }
+}
