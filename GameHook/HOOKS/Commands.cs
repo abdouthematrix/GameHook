@@ -3,9 +3,26 @@ using System.Runtime.InteropServices;
 
 namespace GameHook
 {
-    public static class Commands
+    // Thin wrapper around a CUser* pointer. Not a real struct-of-fields —
+    // CUser's members are virtual methods, so each call still resolves a
+    // vtable slot and invokes it. This just gives call sites a name instead
+    // of passing raw IntPtrs through free functions.
+    internal readonly struct CUser
     {
-        // ---- Delegates for native functions ----
+        private readonly IntPtr _ptr;
+
+        private CUser(IntPtr ptr) => _ptr = ptr;
+
+        // ctx from the command dispatcher is +0x10 off the real CUser object.
+        public static CUser FromContext(IntPtr ctx) => new CUser(IntPtr.Add(ctx, 0x10));
+        public static CUser FromObject(IntPtr obj) => new CUser(obj);
+
+        private const int VTBL_IsGM = 0x230;
+        private const int VTBL_Reply = 0x358;
+        private const int VTBL_GetX = 0x40;
+        private const int VTBL_GetY = 0x48;
+        private const int VTBL_GetMapId = 0x168;
+
         [UnmanagedFunctionPointer(CallingConvention.ThisCall)]
         private delegate bool BoolMethod(IntPtr self);
 
@@ -15,6 +32,45 @@ namespace GameHook
         [UnmanagedFunctionPointer(CallingConvention.ThisCall)]
         private delegate int IntMethod(IntPtr self);
 
+        private IntPtr VtableSlot(int offset) => Marshal.ReadIntPtr(Marshal.ReadIntPtr(_ptr), offset);
+
+        public bool IsGM()
+        {
+            var fn = (BoolMethod)Marshal.GetDelegateForFunctionPointer(VtableSlot(VTBL_IsGM), typeof(BoolMethod));
+            return fn(_ptr);
+        }
+
+        public void Reply(string msg)
+        {
+            var fn = (ReplyMethod)Marshal.GetDelegateForFunctionPointer(VtableSlot(VTBL_Reply), typeof(ReplyMethod));
+            fn(_ptr, msg);
+        }
+
+        public int GetX()
+        {
+            var fn = (IntMethod)Marshal.GetDelegateForFunctionPointer(VtableSlot(VTBL_GetX), typeof(IntMethod));
+            return fn(_ptr);
+        }
+
+        public int GetY()
+        {
+            var fn = (IntMethod)Marshal.GetDelegateForFunctionPointer(VtableSlot(VTBL_GetY), typeof(IntMethod));
+            return fn(_ptr);
+        }
+
+        public int GetMapId()
+        {
+            var fn = (IntMethod)Marshal.GetDelegateForFunctionPointer(VtableSlot(VTBL_GetMapId), typeof(IntMethod));
+            return fn(_ptr);
+        }
+
+        // Lets a CUser be passed anywhere an IntPtr target is expected (e.g. Teleport).
+        public static implicit operator IntPtr(CUser u) => u._ptr;
+    }
+
+    public static class Commands
+    {
+        // ---- Delegates for native functions ----
         [UnmanagedFunctionPointer(CallingConvention.ThisCall)]
         private delegate void TeleportDelegate(IntPtr target, int mapId, int x, int y, byte flags);
 
@@ -44,47 +100,6 @@ namespace GameHook
                 Targets.GetPlayerManagerFromSubsystem, typeof(GetPlayerManagerFromSubsystemDelegate));
 
         // ---- Helpers ----
-        private static IntPtr Inner(IntPtr ctx) => IntPtr.Add(ctx, 0x10);
-
-        private static IntPtr Vtable(IntPtr obj) => Marshal.ReadIntPtr(obj);
-
-        private static bool HasGmPermission(IntPtr ctx)
-        {
-            IntPtr inner = Inner(ctx);
-            IntPtr fnPtr = Marshal.ReadIntPtr(Vtable(inner), 0x230);
-            var fn = (BoolMethod)Marshal.GetDelegateForFunctionPointer(fnPtr, typeof(BoolMethod));
-            return fn(inner);
-        }
-
-        private static void Reply(IntPtr ctx, string msg)
-        {
-            IntPtr inner = Inner(ctx);
-            IntPtr fnPtr = Marshal.ReadIntPtr(Vtable(inner), 0x358);
-            var fn = (ReplyMethod)Marshal.GetDelegateForFunctionPointer(fnPtr, typeof(ReplyMethod));
-            fn(inner, msg);
-        }
-
-        private static int GetX(IntPtr inner)
-        {
-            IntPtr fnPtr = Marshal.ReadIntPtr(Vtable(inner), 0x40);
-            var fn = (IntMethod)Marshal.GetDelegateForFunctionPointer(fnPtr, typeof(IntMethod));
-            return fn(inner);
-        }
-
-        private static int GetY(IntPtr inner)
-        {
-            IntPtr fnPtr = Marshal.ReadIntPtr(Vtable(inner), 0x48);
-            var fn = (IntMethod)Marshal.GetDelegateForFunctionPointer(fnPtr, typeof(IntMethod));
-            return fn(inner);
-        }
-
-        private static int GetMapId(IntPtr inner)
-        {
-            IntPtr fnPtr = Marshal.ReadIntPtr(Vtable(inner), 0x168);
-            var fn = (IntMethod)Marshal.GetDelegateForFunctionPointer(fnPtr, typeof(IntMethod));
-            return fn(inner);
-        }
-
         private static IntPtr FindPlayerByName(string name)
         {
             IntPtr subsystem = GetSubsystem(0xe);
@@ -92,9 +107,9 @@ namespace GameHook
             IntPtr manager = GetPlayerManagerFromSubsystem(subsystem);
             if (manager == IntPtr.Zero) return IntPtr.Zero;
 
-            IntPtr fnPtr = Marshal.ReadIntPtr(Vtable(manager), 0x90);
-            var fn = (FindPlayerDelegate)Marshal.GetDelegateForFunctionPointer(fnPtr, typeof(FindPlayerDelegate));
-            return fn(manager, name, 0);
+            IntPtr fnPtr = Marshal.ReadIntPtr(Marshal.ReadIntPtr(manager), 0x90);
+            var findPlayer = (FindPlayerDelegate)Marshal.GetDelegateForFunctionPointer(fnPtr, typeof(FindPlayerDelegate));
+            return findPlayer(manager, name, 0);
         }
 
         // ---- Command Handlers ----
@@ -102,12 +117,12 @@ namespace GameHook
         {
             try
             {
-                if (!HasGmPermission(ctx)) return;
-                IntPtr inner = Inner(ctx);
+                var user = CUser.FromContext(ctx);
+                if (!user.IsGM()) return;
 
                 if (string.IsNullOrEmpty(args))
                 {
-                    Reply(ctx, "scroll destinations: tc, pc, ac, dc, bi, ma");
+                    user.Reply("scroll destinations: tc, pc, ac, dc, bi, ma");
                     return;
                 }
 
@@ -125,11 +140,12 @@ namespace GameHook
                 {
                     if (args.StartsWith(d.Code, StringComparison.OrdinalIgnoreCase))
                     {
+                        // Teleport wants the outer ctx pointer, not the CUser object itself.
                         Teleport(ctx, d.Map, d.X, d.Y, 0);
                         return;
                     }
                 }
-                Reply(ctx, "scroll destinations: tc, pc, ac, dc, bi, ma");
+                user.Reply("scroll destinations: tc, pc, ac, dc, bi, ma");
             }
             catch (Exception ex)
             {
@@ -141,15 +157,15 @@ namespace GameHook
         {
             try
             {
-                if (!HasGmPermission(ctx)) return;
-                IntPtr inner = Inner(ctx);
+                var self = CUser.FromContext(ctx);
+                if (!self.IsGM()) return;
 
-                if (string.IsNullOrEmpty(args)) { Reply(ctx, "Usage: /bring <playername>"); return; }
+                if (string.IsNullOrEmpty(args)) { self.Reply("Usage: /bring <playername>"); return; }
 
                 IntPtr target = FindPlayerByName(args);
-                if (target == IntPtr.Zero) { Reply(ctx, "Target not found."); return; }
+                if (target == IntPtr.Zero) { self.Reply("Target not found."); return; }
 
-                Teleport(target, GetMapId(inner), GetX(inner), GetY(inner), 0);
+                Teleport(target, self.GetMapId(), self.GetX(), self.GetY(), 0);
             }
             catch (Exception ex)
             {
@@ -161,14 +177,15 @@ namespace GameHook
         {
             try
             {
-                if (!HasGmPermission(ctx)) return;
-                if (string.IsNullOrEmpty(args)) { Reply(ctx, "Usage: /goto <playername>"); return; }
+                var self = CUser.FromContext(ctx);
+                if (!self.IsGM()) return;
+                if (string.IsNullOrEmpty(args)) { self.Reply("Usage: /goto <playername>"); return; }
 
                 IntPtr target = FindPlayerByName(args);
-                if (target == IntPtr.Zero) { Reply(ctx, "Target not found."); return; }
+                if (target == IntPtr.Zero) { self.Reply("Target not found."); return; }
 
-                IntPtr targetInner = Inner(target);
-                Teleport(ctx, GetMapId(targetInner), GetX(targetInner), GetY(targetInner), 0);
+                var targetUser = CUser.FromObject(target);
+                Teleport(ctx, targetUser.GetMapId(), targetUser.GetX(), targetUser.GetY(), 0);
             }
             catch (Exception ex)
             {
@@ -180,9 +197,10 @@ namespace GameHook
         {
             try
             {
-                if (!HasGmPermission(ctx)) return;
+                var user = CUser.FromContext(ctx);
+                if (!user.IsGM()) return;
                 PatchBytes(Targets.PmsGateAddress, Targets.HideActionsBytes);
-                Reply(ctx, "Actions are now hidden from PMS");
+                user.Reply("Actions are now hidden from PMS");
             }
             catch (Exception ex)
             {
@@ -194,9 +212,10 @@ namespace GameHook
         {
             try
             {
-                if (!HasGmPermission(ctx)) return;
+                var user = CUser.FromContext(ctx);
+                if (!user.IsGM()) return;
                 PatchBytes(Targets.PmsGateAddress, Targets.ShowActionsBytes);
-                Reply(ctx, "Actions are now visible to PMS");
+                user.Reply("Actions are now visible to PMS");
             }
             catch (Exception ex)
             {
@@ -235,7 +254,6 @@ namespace GameHook
             Reg("goto", Cmd_Goto);
             Reg("hideactions", Cmd_HideActions);
             Reg("showactions", Cmd_ShowActions);
-            Log.Info("[Commands] Registered 5 in-game commands");
         }
     }
 }

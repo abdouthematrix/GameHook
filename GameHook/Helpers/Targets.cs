@@ -23,8 +23,8 @@ namespace GameHook
         public static readonly IntPtr Data_BlowfishKey = new IntPtr(0x14079ae58);
 
         // ---- Secret command prefixes ----
-        public static readonly IntPtr Data_SecretString1 = new IntPtr(0x1406e8b00);
-        public static readonly IntPtr Data_SecretString2 = new IntPtr(0x1406e8b18);
+        public static readonly IntPtr Data_SecretString1 = new IntPtr(0x1406e8b00);// /afgetghserveraaip
+        public static readonly IntPtr Data_SecretString2 = new IntPtr(0x1406e8b18);// /afgetghserveraaversion
 
         // ---- ConnectRedirect port rules ----
         public const ushort KeyServerPort = 9869;       // 0x268d
