@@ -7,6 +7,7 @@
     Height="620"
     Background="{StaticResource BackgroundBrush}"
     FontFamily="Segoe UI"
+    Icon="/neo_icon.ico"
     WindowStartupLocation="CenterScreen">
     <Grid Margin="28">
         <Grid.RowDefinitions>

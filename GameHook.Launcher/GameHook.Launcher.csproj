@@ -11,9 +11,10 @@
     <UseWindowsForms>true</UseWindowsForms>    
     <!-- for FolderBrowserDialog -->
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>neo_icon.ico</ApplicationIcon>
   </PropertyGroup>
 
-  <ItemGroup>
+   <ItemGroup>
     <PackageReference Include="EasyHook" Version="2.7.7097" />
   </ItemGroup>
 
@@ -22,13 +23,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="..\GameHook\ServerGameConfig.json">
+    <Resource Include="..\GameHook\ServerGameConfig.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>    
-  </ItemGroup>
-
-  <ItemGroup>
-    <Page Include="App.xaml" />
+    </Resource>
+    <Resource Include="neo_icon.ico" />    
   </ItemGroup>
 
 </Project>
