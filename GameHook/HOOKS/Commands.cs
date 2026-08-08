@@ -4,20 +4,29 @@ using System.Runtime.InteropServices;
 namespace GameHook
 {
     // Thin wrapper around a CUser* pointer. Not a real struct-of-fields —
-    // CUser's members are virtual methods, so each call still resolves a
+    // its members are virtual methods, so each call still resolves a
     // vtable slot and invokes it. This just gives call sites a name instead
     // of passing raw IntPtrs through free functions.
+    //
+    // Object layout note: CUser uses multiple inheritance with 3 vtables
+    // in one object (found via ~CUser):
+    //   +0x00 CUser itself
+    //   +0x10 IRole   <- ctx+0x10 (FromContext) actually points here
+    //   +0x18 IMapThing
+    // IsGM/IsPM below are IRole methods, not CUser's own vtable.
     internal readonly struct CUser
     {
         private readonly IntPtr _ptr;
 
         private CUser(IntPtr ptr) => _ptr = ptr;
 
-        // ctx from the command dispatcher is +0x10 off the real CUser object.
+        // ctx from the command dispatcher is +0x10 off CUser, landing on its IRole sub-object.
         public static CUser FromContext(IntPtr ctx) => new CUser(IntPtr.Add(ctx, 0x10));
         public static CUser FromObject(IntPtr obj) => new CUser(obj);
 
-        private const int VTBL_IsGM = 0x230;
+        // IRole vtable slots
+        private const int VTBL_IsGM = 0x230;   // true if name/title contains "[GM]" or "[PM]"
+        private const int VTBL_IsPM = 0x238;   // true if name/title contains "[PM]" only
         private const int VTBL_Reply = 0x358;
         private const int VTBL_GetX = 0x40;
         private const int VTBL_GetY = 0x48;
@@ -34,9 +43,18 @@ namespace GameHook
 
         private IntPtr VtableSlot(int offset) => Marshal.ReadIntPtr(Marshal.ReadIntPtr(_ptr), offset);
 
+        // Note: this is a name/title substring check ("[GM]" or "[PM]"), not a rank/permission
+        // flag. Anyone whose display name or title contains that literal tag passes.
         public bool IsGM()
         {
             var fn = (BoolMethod)Marshal.GetDelegateForFunctionPointer(VtableSlot(VTBL_IsGM), typeof(BoolMethod));
+            return fn(_ptr);
+        }
+
+        // Narrower than IsGM(): true only for "[PM]", not "[GM]".
+        public bool IsPM()
+        {
+            var fn = (BoolMethod)Marshal.GetDelegateForFunctionPointer(VtableSlot(VTBL_IsPM), typeof(BoolMethod));
             return fn(_ptr);
         }
 
@@ -98,6 +116,9 @@ namespace GameHook
         private static readonly GetPlayerManagerFromSubsystemDelegate GetPlayerManagerFromSubsystem =
             (GetPlayerManagerFromSubsystemDelegate)Marshal.GetDelegateForFunctionPointer(
                 Targets.GetPlayerManagerFromSubsystem, typeof(GetPlayerManagerFromSubsystemDelegate));
+
+        // ---- Registered command names (populated by RegisterAll, read by Cmd_NewCmd) ----
+        private static readonly System.Collections.Generic.List<string> _registeredNames = new System.Collections.Generic.List<string>();
 
         // ---- Helpers ----
         private static IntPtr FindPlayerByName(string name)
@@ -223,6 +244,21 @@ namespace GameHook
             }
         }
 
+        public static void Cmd_NewCmd(IntPtr p1, IntPtr p2, string args, IntPtr p4, IntPtr p5, IntPtr ctx)
+        {
+            try
+            {
+                var user = CUser.FromContext(ctx);
+                if (!user.IsGM()) return;
+
+                user.Reply("Custom commands: " + string.Join(", ", _registeredNames));
+            }
+            catch (Exception ex)
+            {
+                Log.Info($"[Cmd_NewCmd] Exception: {ex}");
+            }
+        }
+
         // ---- Utility: PatchBytes ----
         private static void PatchBytes(IntPtr address, byte[] bytes)
         {
@@ -247,6 +283,7 @@ namespace GameHook
             {
                 int ok = registerFn(table, name, handler);
                 Log.Info(ok != 0 ? $"  [OK] {name}" : $"  [FAIL] {name} (already registered?)");
+                if (ok != 0) _registeredNames.Add(name);
             }
 
             Reg("scroll", Cmd_Scroll);
@@ -254,6 +291,11 @@ namespace GameHook
             Reg("goto", Cmd_Goto);
             Reg("hideactions", Cmd_HideActions);
             Reg("showactions", Cmd_ShowActions);
+            Reg("newcmd", Cmd_NewCmd);
+
+            Log.Info("----Commands----");
+            Log.Info("scroll destinations: tc, pc, ac, dc, bi, ma");
+            Log.Info("Usage: /bring <playername>, /goto <playername>, /hideactions, /showactions");
         }
     }
 }
