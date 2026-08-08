@@ -44,11 +44,12 @@ namespace GameHook
                 Thread.Sleep(100);
             Log.Info("MapGroup->Initialized");
 
-            GameHooks.InstallAll(_cfg);
-
+            GameHooks.InstallAll(_cfg);   
             Log.Info("----Commands----");
             Log.Info("scroll destinations: tc, pc, ac, dc, bi, ma");
             Log.Info("Usage: /bring <playername>, /goto <playername>, /hideactions, /showactions");
+            AntiCheatHooks.Install();
+
             // Keep thread alive
             try
             {
