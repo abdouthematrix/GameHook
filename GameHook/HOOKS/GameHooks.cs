@@ -34,25 +34,54 @@ namespace GameHook
 
             int hooked = 0, failed = 0;
 
-            if (HookUtil.CreateAndEnable(Targets.CUser_GetBusiness, new GetBusinessDelegate(Detour_GetBusiness), out _originalGetBusiness, "CUser::GetBusiness"))
+            if (HookUtil.CreateAndEnable(Targets.CUser_GetBusiness,
+                new GetBusinessDelegate(Detour_GetBusiness),
+                out _originalGetBusiness,
+                out var businessHook,
+                "CUser::GetBusiness"))
+            {
+                _hooks.Add(businessHook);
                 hooked++;
+            }
             else failed++;
 
-            if (HookUtil.CreateAndEnable(Targets.CSlotMgr_GetRewardTime, new GetRewardTimeDelegate(Detour_GetRewardTime), out _originalGetRewardTime, "CSlotMgr::GetRewardTime"))
+            if (HookUtil.CreateAndEnable(Targets.CSlotMgr_GetRewardTime,
+                new GetRewardTimeDelegate(Detour_GetRewardTime),
+                out _originalGetRewardTime,
+                out var rewardHook,
+                "CSlotMgr::GetRewardTime"))
+            {
+                _hooks.Add(rewardHook);
                 hooked++;
+            }
             else failed++;
 
-            if (HookUtil.CreateAndEnable(Targets.CommandTableRegister, new RegisterTableDelegate(Detour_RegisterTable), out _originalRegisterTable, "Game::PMCommands"))
+            if (HookUtil.CreateAndEnable(Targets.CommandTableRegister,
+                new RegisterTableDelegate(Detour_RegisterTable),
+                out _originalRegisterTable,
+                out var tableHook,
+                "Game::PMCommands"))
+            {
+                _hooks.Add(tableHook);
                 hooked++;
+            }
             else failed++;
 
-            if (HookUtil.CreateAndEnable(Targets.CItemMgr_LockItem, new LockItemDelegate(Detour_LockItem), out _originalLockItem, "CItemMgr::LockItem"))
+            if (HookUtil.CreateAndEnable(Targets.CItemMgr_LockItem,
+                new LockItemDelegate(Detour_LockItem),
+                out _originalLockItem,
+                out var lockHook,
+                "CItemMgr::LockItem"))
+            {
+                _hooks.Add(lockHook);
                 hooked++;
+            }
             else failed++;
 
             Log.Info($"[HookManager] Complete: {hooked} hooked, {failed} failed");
             return failed == 0;
         }
+
 
         public static void UnInstallAll()
         {

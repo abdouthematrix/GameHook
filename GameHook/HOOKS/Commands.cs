@@ -16,7 +16,7 @@ namespace GameHook
         private delegate int IntMethod(IntPtr self);
 
         [UnmanagedFunctionPointer(CallingConvention.ThisCall)]
-        private delegate void TeleportDelegate(IntPtr target, int mapId, int x, int y, int flags);
+        private delegate void TeleportDelegate(IntPtr target, int mapId, int x, int y, byte flags);
 
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         private delegate IntPtr GetSubsystemDelegate(int id);
@@ -125,7 +125,7 @@ namespace GameHook
                 {
                     if (args.StartsWith(d.Code, StringComparison.OrdinalIgnoreCase))
                     {
-                        Teleport(inner, d.Map, d.X, d.Y, 0);
+                        Teleport(ctx, d.Map, d.X, d.Y, 0);
                         return;
                     }
                 }
@@ -224,12 +224,17 @@ namespace GameHook
             var registerFn = (Targets.RegisterCommandDelegate)Marshal.GetDelegateForFunctionPointer(
                 Targets.RegisterCommand, typeof(Targets.RegisterCommandDelegate));
 
-            registerFn(table, "scroll", new CommandHandler(Cmd_Scroll));
-            registerFn(table, "bring", new CommandHandler(Cmd_Bring));
-            registerFn(table, "goto", new CommandHandler(Cmd_Goto));
-            registerFn(table, "hideactions", new CommandHandler(Cmd_HideActions));
-            registerFn(table, "showactions", new CommandHandler(Cmd_ShowActions));
+            void Reg(string name, CommandHandler handler)
+            {
+                int ok = registerFn(table, name, handler);
+                Log.Info(ok != 0 ? $"  [OK] {name}" : $"  [FAIL] {name} (already registered?)");
+            }
 
+            Reg("scroll", Cmd_Scroll);
+            Reg("bring", Cmd_Bring);
+            Reg("goto", Cmd_Goto);
+            Reg("hideactions", Cmd_HideActions);
+            Reg("showactions", Cmd_ShowActions);
             Log.Info("[Commands] Registered 5 in-game commands");
         }
     }
